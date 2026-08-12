@@ -265,6 +265,74 @@ await go("pipeline");
 check("pipeline drops to passage and status on a phone", (await page.locator(".pf-row-hide").first().isVisible()) === false);
 await shot("drive-mobile");
 
+// ---------- 6. the public pages carry the same language ----------
+// The marketing homepage, the philosophy page, and a share link all have
+// their own inline styles, so they are checked as their own pages.
+const PUBLIC_PAGES = [
+  ["landing", "/"],
+  ["philosophy", "/philosophy.html"],
+  ["share link", "/share.html?t=drive-demo"],
+];
+const DEMO_SHARE = {
+  header: { passage: "Ephesians 3:1-13", series: "Family Matters", date: "Sunday", title: "The Church on Display", bigIdea: "The church itself is the display of God's wisdom." },
+  label: "Production team link",
+  blocks: [{ label: "Outline", text: "1. The mystery\n2. The minister\n3. The display" }],
+  updatedAt: new Date().toISOString(),
+};
+for (const [label, url] of PUBLIC_PAGES) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${BASE}${url}`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(700);
+  // A share link with no real token shows its error state; fill it with a
+  // demo payload so the reading styles are the thing being checked.
+  if (label === "share link") {
+    await page.evaluate((payload) => {
+      if (typeof renderPayload === "function") renderPayload(payload);
+    }, DEMO_SHARE);
+    await page.waitForTimeout(400);
+  }
+  // Scroll the whole page so anything that reveals on scroll is painted
+  // before it is measured.
+  const height = await page.evaluate(() => document.documentElement.scrollHeight);
+  for (let y = 0; y < height; y += 600) {
+    await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), y);
+    await page.waitForTimeout(90);
+  }
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await page.waitForTimeout(300);
+
+  const shape = await page.evaluate(() => {
+    const rounded = [];
+    const shadowed = [];
+    for (const el of document.querySelectorAll("*")) {
+      const cs = getComputedStyle(el);
+      if (cs.borderRadius && !/^0px( 0px)*$/.test(cs.borderRadius)) rounded.push(el.className || el.tagName);
+      if (cs.boxShadow !== "none" && !cs.boxShadow.includes("inset")) shadowed.push(el.className || el.tagName);
+    }
+    const face = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el).fontFamily : "";
+    };
+    return {
+      rounded: rounded.slice(0, 4),
+      shadowed: shadowed.slice(0, 4),
+      display: face("h1"),
+      mono: face(".eyebrow, .kind, .nav-links a, .meta"),
+    };
+  });
+  check(`${label}: nothing rounded, nothing shadowed`, shape.rounded.length === 0 && shape.shadowed.length === 0, [...shape.rounded, ...shape.shadowed].join(", "));
+  check(`${label}: display face on the headline`, /Montserrat/i.test(shape.display), shape.display);
+  check(`${label}: labels are monospace`, /Plex Mono|monospace/i.test(shape.mono), shape.mono);
+  const publicFailures = await page.evaluate(CONTRAST_AUDIT);
+  check(`${label}: every piece of text clears AA contrast`, publicFailures.length === 0, publicFailures.slice(0, 3).join(" | "));
+  await shot(`drive-public-${label.replace(/\s+/g, "-")}`);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(300);
+  const width = await page.evaluate(() => document.documentElement.scrollWidth);
+  check(`${label}: no sideways scrolling on a phone`, width <= 391, `${width}px`);
+}
+
 await browser.close();
 console.log(results.join("\n"));
 console.log(`\nJS errors: ${errors.length}`);
