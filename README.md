@@ -53,7 +53,11 @@ component inherits the palette. The **light/dark toggle** is persisted per brows
 stamped on `<html>`, `<body>`, and `.pf-root` so the page behind the app matches too.
 
 The public pages (`index.html`, `philosophy.html`, `share.html`) carry their own inline
-styles and are deliberately untouched by this language.
+copies of the same tokens and rules, so the whole site reads as one thing. They stay
+self-contained on purpose: no extra stylesheet request before first paint, and a share
+link renders even if the app's CSS never loads. When a token changes in
+`src/styles.css`, change it in those three files too; the browser drive checks all three
+for square corners, no shadows, monospace labels, and AA contrast.
 
 ## Accounts and Database
 
